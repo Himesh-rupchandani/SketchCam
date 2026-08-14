@@ -1,0 +1,6 @@
+# mediapipe 0.10.21 bundles the hand-tracking model inside the wheel, so the
+# app works offline with no extra downloads. The legacy `solutions` API used
+# here was removed in later releases, so pin this exact version.
+mediapipe==0.10.21
+opencv-contrib-python>=4.8
+numpy>=1.24,<2
