@@ -339,9 +339,12 @@ def main():
         nonlocal current, prev_pt, smooth_pt
         if current is not None:
             if len(current.points) == 1:
+                # A tap that never moved still leaves a dot.
                 draw_dot(canvas, mask, current.points[0], current.color,
                          current.thickness, current.eraser)
-            strokes.append(current)
+            if current.points:
+                # Don't commit empty strokes (finger appeared and vanished).
+                strokes.append(current)
             current = None
         prev_pt = None
         smooth_pt = None
