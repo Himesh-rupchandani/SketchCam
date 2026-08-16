@@ -1,0 +1,8 @@
+# Saved drawings
+sketches/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
