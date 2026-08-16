@@ -26,7 +26,7 @@
 ### Windows (PowerShell)
 
 ```powershell
-git clone https://github.com/Himesh-rupchandani/SketchCam.git
+git clone -b arena/019fff86-sketchcam https://github.com/Himesh-rupchandani/SketchCam.git
 cd SketchCam
 pip install -r requirements.txt
 python sketchcam.py
@@ -35,13 +35,18 @@ python sketchcam.py
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/Himesh-rupchandani/SketchCam.git
+git clone -b arena/019fff86-sketchcam https://github.com/Himesh-rupchandani/SketchCam.git
 cd SketchCam
 pip install -r requirements.txt
 python3 sketchcam.py
 ```
 
 That's it — the webcam window opens and you can start writing in the air.
+
+> ⚠️ **Important:** the code lives on the **`arena/019fff86-sketchcam`** branch.
+> A plain `git clone` (without `-b`) checks out the default `main` branch, which
+> is empty. If you already cloned without `-b`, just run
+> `git checkout arena/019fff86-sketchcam` inside the `SketchCam` folder.
 
 > **New to git?** Install it from [git-scm.com](https://git-scm.com/), or on
 > Windows download **Git for Windows**. VS Code's terminal can then run `git`
