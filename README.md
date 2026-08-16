@@ -2,19 +2,20 @@
 
 Write in the air with your finger and watch it appear on your laptop screen
 **in real time**. It uses your built-in webcam and AI hand tracking
-(MediaPipe) to follow your fingertip and paint onto a canvas overlaid on the
+(MediaPipe) to follow both hands and paint onto a canvas overlaid on the
 live camera feed.
 
 ## Features
 
-- ✍️ **Air drawing** — your index fingertip is the pen
+- ✍️ **Air drawing** — your right index fingertip is the pen
 - 🧽 **Eraser** — gesture or toolbar button
 - 🎨 **Color picker** — 8 colors in the toolbar
-- 🖌️ **Brush size** — adjustable with `-`/`+` buttons or `[`/`]` keys
+- 🖌️ **Brush size** — gesture, `-`/`+` buttons, or `[`/`]` keys
 - ↩️ **Undo** last stroke
 - 🗑️ **Clear** the whole canvas
 - 💾 **Save** your drawing as a PNG (goes into the `sketches/` folder)
-- 🫰 **In-air gestures** (see below)
+- 🖐️ **Two-hand gestures** (see below)
+- ✨ **Neon hand-skeleton theme** — left hand cyan, right hand magenta
 
 ## Setup
 
@@ -31,14 +32,26 @@ python sketchcam.py
 
 ## How to use it
 
-Stand so your hand is visible to the camera, then:
+Stand so your hands are visible to the camera.
+
+### Right hand = the pen
 
 | Gesture                        | Action                    |
 | ------------------------------ | ------------------------- |
 | ☝️ Index finger only            | **Draw**                  |
-| ✌️ Index + middle finger        | **Erase**                 |
+| ✌️ Index + middle finger        | **Erase** (left hand closed) |
 | ✋ Open hand                    | Lift the pen (move)       |
-| ✊ Fist (hold ~1.2 seconds)     | **Clear** the canvas      |
+
+### Left hand = the modifier
+
+| Gesture                                          | Action                    |
+| ------------------------------------------------ | ------------------------- |
+| ✋ Left palm open **+** right hand ✌️ (peace)      | **Increase brush size** (hold to keep growing) |
+| ✊ **Both** fists, hold ~3 seconds                  | **Clear** the whole canvas |
+| ✊ One fist only (when it's the only hand), ~1.2s | **Clear** the whole canvas |
+
+> While your left palm is open, the right hand's ☝️ still draws normally —
+> only ✌️ is repurposed into "grow the brush".
 
 ### Toolbar (click with your mouse)
 
@@ -68,7 +81,11 @@ Color swatches · **Eraser** · brush `-`/`+` · **Undo** · **Clear** · **Save
 ```bash
 python sketchcam.py --camera 1        # use a different webcam (0, 1, 2, ...)
 python sketchcam.py --width 640 --height 480   # lower resolution = faster
+python sketchcam.py --swap-hands      # if it confuses your left and right hands
 ```
+
+> If the clear / size gestures don't respond as expected, your camera may be
+> reporting hands mirrored — run with `--swap-hands` to flip them.
 
 > The toolbar is laid out for a 1280px-wide window. At very low resolutions
 > (e.g. 640px) the rightmost buttons may be cropped — keep the default

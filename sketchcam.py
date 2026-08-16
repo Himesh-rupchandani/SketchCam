@@ -2,15 +2,19 @@
 """
 SketchCam — write in the air, see it on your screen in real time.
 
-Point your built-in webcam at your hand and "write" with your index finger.
-AI hand tracking (MediaPipe) follows your fingertip and paints onto a canvas
-that is overlaid on the live camera feed.
+Point your built-in webcam at your hands and "write" with your RIGHT index
+finger. AI hand tracking (MediaPipe) follows both hands and paints onto a
+canvas that is overlaid on the live camera feed.
 
-GESTURES (use your hand in front of the camera):
+RIGHT HAND = THE PEN:
     * Draw   -> raise ONLY your index finger            (pen down)
     * Erase  -> raise index + middle finger (peace sign)
     * Lift   -> open hand / any other pose               (move without drawing)
-    * Clear  -> make a FIST and hold it ~1.2 seconds
+
+LEFT HAND = MODIFIER:
+    * Brush size UP  -> left palm open (✋) + right hand peace sign (✌️)
+    * Clear ALL      -> BOTH hands as fists (✊ + ✊), hold ~3 seconds
+    * (legacy) Clear -> ONE fist only, when it is the only hand, hold ~1.2s
 
 MOUSE (click the toolbar at the top of the window):
     * color swatches, eraser, brush - / +, undo, clear, save
@@ -46,10 +50,17 @@ except ImportError:
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
-PANEL_H = 56            # height of the toolbar at the top of the window
-CLEAR_HOLD_FRAMES = 36  # ~1.2s at 30fps: how long to hold a fist to clear
-SMOOTH_ALPHA = 0.45     # tip-position smoothing (0 = no smoothing, 1 = frozen)
-MIN_MOVE_PX = 1.5       # ignore tiny movements to avoid jitter
+PANEL_H = 56                 # height of the toolbar at the top of the window
+SINGLE_FIST_CLEAR_S = 1.2    # one fist (only hand) hold time to clear
+BOTH_FIST_CLEAR_S = 3.0      # both fists hold time to clear
+SIZE_STEP_S = 0.25           # how fast the brush grows while holding the pose
+SIZE_MAX = 40                # brush size cap
+SMOOTH_ALPHA = 0.45          # tip-position smoothing (0 = no smoothing, 1 = frozen)
+MIN_MOVE_PX = 1.5            # ignore tiny movements to avoid jitter
+
+# Neon hand-skeleton theme (BGR).
+NEON_LEFT = (255, 255, 0)    # cyan  -> left hand
+NEON_RIGHT = (255, 0, 255)   # magenta -> right hand (the pen)
 
 # Palette shown in the toolbar: (label, BGR color)
 COLORS = [
@@ -123,42 +134,102 @@ def rebuild_canvas(canvas, mask, strokes):
 # Hand / gesture logic
 # --------------------------------------------------------------------------
 def fingers_up(hand_landmarks, hw):
-    """Return (index, middle, ring, pinky, thumb) booleans for a hand."""
+    """
+    Return [index, middle, ring, pinky] booleans for a hand — True when a
+    finger is extended. The thumb is deliberately ignored: it folds in many
+    different ways, so it is unreliable for gesture detection.
+    """
     lm = hand_landmarks.landmark
-    idx = [hw.INDEX_FINGER_TIP, hw.MIDDLE_FINGER_TIP,
-           hw.RING_FINGER_TIP, hw.PINKY_TIP]
-    pip = [hw.INDEX_FINGER_PIP, hw.MIDDLE_FINGER_PIP,
-           hw.RING_FINGER_PIP, hw.PINKY_PIP]
+    tips = [hw.INDEX_FINGER_TIP, hw.MIDDLE_FINGER_TIP,
+            hw.RING_FINGER_TIP, hw.PINKY_TIP]
+    pips = [hw.INDEX_FINGER_PIP, hw.MIDDLE_FINGER_PIP,
+            hw.RING_FINGER_PIP, hw.PINKY_PIP]
 
     up = []
-    for tip_i, pip_i in zip(idx, pip):
+    for tip_i, pip_i in zip(tips, pips):
         # In image coordinates the fingertip is ABOVE the pip when extended.
         up.append(lm[tip_i].y < lm[pip_i].y)
-
-    # Thumb: "up" when the tip is further from the wrist than the IP joint.
-    tip = np.array([lm[hw.THUMB_TIP].x, lm[hw.THUMB_TIP].y])
-    ip = np.array([lm[hw.THUMB_IP].x, lm[hw.THUMB_IP].y])
-    wrist = np.array([lm[hw.WRIST].x, lm[hw.WRIST].y])
-    thumb_up = np.linalg.norm(tip - wrist) > np.linalg.norm(ip - wrist)
-
-    return up[0], up[1], up[2], up[3], thumb_up
+    return up
 
 
-def detect_mode(index, middle, ring, pinky, thumb):
+def detect_mode(up):
     """
     Map the finger pose to an action mode.
       DRAW  : only index finger up
       ERASE : index + middle up
-      FIST  : everything down (including thumb)
+      FIST  : all four fingers down (thumb ignored)
       LIFT  : anything else (pen up, move without drawing)
     """
+    index, middle, ring, pinky = up
     if index and not middle and not ring and not pinky:
         return "DRAW"
     if index and middle and not ring and not pinky:
         return "ERASE"
-    if not index and not middle and not ring and not pinky and not thumb:
+    if not index and not middle and not ring and not pinky:
         return "FIST"
     return "LIFT"
+
+
+def hand_state(hand, hw, w, h):
+    """Summarise one detected hand into the bits the app cares about."""
+    up = fingers_up(hand, hw)
+    index, middle, ring, pinky = up
+    tip = hand.landmark[hw.INDEX_FINGER_TIP]
+    return {
+        "mode": detect_mode(up),
+        "peace": index and middle and not ring and not pinky,   # ✌️
+        "open": index and middle and ring and pinky,            # ✋ open palm
+        "fist": not index and not middle and not ring and not pinky,
+        "tip": (int(tip.x * w), int(tip.y * h)),
+    }
+
+
+def resolve_hands(landmarks, handedness):
+    """
+    Pair detected hands with Left/Right using MediaPipe's handedness labels.
+    If both hands report the same label, fall back to x-position (in the
+    mirrored frame the user's LEFT hand is on the LEFT side of the image).
+    Returns {'Left': landmarks_or_None, 'Right': landmarks_or_None}.
+    """
+    sides = {"Left": None, "Right": None}
+    by_label = {"Left": [], "Right": []}
+    for lm, hd in zip(landmarks, handedness):
+        label = hd.classification[0].label
+        by_label.setdefault(label, []).append(lm)
+
+    if len(by_label.get("Left", [])) == 2:
+        a, b = by_label["Left"]
+        if a.landmark[0].x > b.landmark[0].x:
+            a, b = b, a
+        sides["Left"], sides["Right"] = a, b
+    elif len(by_label.get("Right", [])) == 2:
+        a, b = by_label["Right"]
+        if a.landmark[0].x > b.landmark[0].x:
+            a, b = b, a
+        sides["Left"], sides["Right"] = a, b
+    else:
+        for lm, hd in zip(landmarks, handedness):
+            label = hd.classification[0].label
+            if label in sides and sides[label] is None:
+                sides[label] = lm
+    return sides
+
+
+def draw_neon_hand(img, hand, mp_hands, mp_draw, color):
+    """Draw one hand skeleton with a soft neon glow, then crisp lines."""
+    glow = np.zeros_like(img)
+    mp_draw.draw_landmarks(
+        glow, hand, mp_hands.HAND_CONNECTIONS,
+        mp_draw.DrawingSpec(color=color, thickness=6, circle_radius=9),
+        mp_draw.DrawingSpec(color=color, thickness=5, circle_radius=7),
+    )
+    glow = cv2.GaussianBlur(glow, (0, 0), 7)
+    cv2.add(img, glow, img)  # saturating add -> bloom
+    mp_draw.draw_landmarks(
+        img, hand, mp_hands.HAND_CONNECTIONS,
+        mp_draw.DrawingSpec(color=color, thickness=2, circle_radius=3),
+        mp_draw.DrawingSpec(color=(255, 255, 255), thickness=1, circle_radius=4),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -211,23 +282,19 @@ def draw_toolbar(panel, rects, state):
     cv2.line(panel, (0, PANEL_H - 1), (rects["width"], PANEL_H - 1),
              (70, 70, 75), 1)
 
-    # Color swatches
     for name, color in COLORS:
         r = rects[f"color:{name}"]
         border = (255, 255, 255) if (state["color"] == color and not state["eraser"]) else None
         draw_button(panel, r, "", color, border=border)
 
-    # Eraser
     eraser_on = state["eraser"]
     draw_button(panel, rects["eraser"], "Eraser", (60, 60, 64),
                 border=(255, 255, 255) if eraser_on else None)
 
-    # Brush controls
     draw_button(panel, rects["brush-"], "-", (60, 60, 64))
     draw_button(panel, rects["brush"], str(state["brush"]), (25, 25, 28))
     draw_button(panel, rects["brush+"], "+", (60, 60, 64))
 
-    # Actions
     draw_button(panel, rects["undo"], "Undo", (60, 60, 64))
     draw_button(panel, rects["clear"], "Clear", (60, 60, 64))
     draw_button(panel, rects["save"], "Save", (60, 60, 64))
@@ -250,7 +317,7 @@ def handle_click(rects, state, x, y):
             elif key == "brush-":
                 state["brush"] = max(1, state["brush"] - 1)
             elif key == "brush+":
-                state["brush"] = min(40, state["brush"] + 1)
+                state["brush"] = min(SIZE_MAX, state["brush"] + 1)
             elif key == "undo":
                 state["pending_undo"] = True
             elif key == "clear":
@@ -268,6 +335,8 @@ def parse_args():
     p.add_argument("--camera", type=int, default=0, help="webcam index (default 0)")
     p.add_argument("--width", type=int, default=1280, help="requested camera width")
     p.add_argument("--height", type=int, default=720, help="requested camera height")
+    p.add_argument("--swap-hands", action="store_true",
+                   help="swap left/right if the app confuses your hands")
     return p.parse_args()
 
 
@@ -278,7 +347,7 @@ def main():
     mp_draw = mp.solutions.drawing_utils
     hands = mp_hands.Hands(
         static_image_mode=False,
-        max_num_hands=1,
+        max_num_hands=2,
         min_detection_confidence=0.7,
         min_tracking_confidence=0.5,
     )
@@ -316,7 +385,11 @@ def main():
     prev_pt = None            # previous smoothed tip position
     smooth_pt = None          # smoothed tip position
     active = False            # are we currently laying down a stroke?
-    fist_frames = 0           # how long a fist has been held
+
+    # Gesture hold timers (seconds since the pose began, or None).
+    single_fist_start = None
+    both_fist_start = None
+    size_last_step = None     # last time the brush grew during size control
 
     rects = build_ui_rects(w)
 
@@ -334,6 +407,12 @@ def main():
         path = os.path.join("sketches", f"sketch_{stamp}.png")
         cv2.imwrite(path, canvas)
         print(f"Saved: {path}")
+
+    def clear_all(label):
+        strokes.clear()
+        canvas[:] = 0
+        mask[:] = 0
+        print(f"Canvas cleared ({label}).")
 
     def commit_stroke():
         nonlocal current, prev_pt, smooth_pt
@@ -362,38 +441,75 @@ def main():
         results = hands.process(rgb)
         rgb.flags.writeable = True
 
-        mode = "LIFT"
-        tip_pt = None
-        hand = None
-        if results.multi_hand_landmarks:
-            hand = results.multi_hand_landmarks[0]
-            index, middle, ring, pinky, thumb = fingers_up(hand, mp_hands.HandLandmark)
-            mode = detect_mode(index, middle, ring, pinky, thumb)
+        # --- Identify each hand (Left / Right) -----------------------------
+        hand_lms = results.multi_hand_landmarks or []
+        hand_hds = results.multi_handedness or []
+        sides = resolve_hands(hand_lms, hand_hds)
+        if args.swap_hands:
+            sides["Left"], sides["Right"] = sides["Right"], sides["Left"]
 
-            tip = hand.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-            tip_pt = (int(tip.x * w), int(tip.y * h))
+        right = hand_state(sides["Right"], mp_hands.HandLandmark, w, h) if sides["Right"] else None
+        left = hand_state(sides["Left"], mp_hands.HandLandmark, w, h) if sides["Left"] else None
 
-        # --- Fist = hold to clear -----------------------------------------
-        if mode == "FIST":
-            fist_frames += 1
-            if fist_frames >= CLEAR_HOLD_FRAMES:
-                strokes.clear()
-                canvas[:] = 0
-                mask[:] = 0
-                fist_frames = 0
-                print("Canvas cleared (fist gesture).")
+        now = time.time()
+
+        # --- Gesture resolution --------------------------------------------
+        right_fist = bool(right and right["fist"])
+        left_fist = bool(left and left["fist"])
+        left_open = bool(left and left["open"])
+
+        both_fist = right_fist and left_fist                      # ✊ + ✊
+        single_fist = (right_fist and not left) or (left_fist and not right)
+
+        # Brush size up: left palm open + right hand peace sign.
+        size_control = bool(left_open and right and right["peace"])
+
+        if size_control:
+            pen_mode = "LIFT"          # ✌️ does not erase while resizing
         else:
-            fist_frames = 0
+            pen_mode = right["mode"] if right else "LIFT"
 
-        # --- Stroke lifecycle ---------------------------------------------
-        if mode in ("DRAW", "ERASE") and tip_pt is not None:
+        tip_pt = right["tip"] if right else None
+
+        # --- Clear gestures (time-based holds) -----------------------------
+        if both_fist:
+            if both_fist_start is None:
+                both_fist_start = now
+            elif now - both_fist_start >= BOTH_FIST_CLEAR_S:
+                clear_all("both fists")
+                both_fist_start = None
+        else:
+            both_fist_start = None
+
+        if single_fist:
+            if single_fist_start is None:
+                single_fist_start = now
+            elif now - single_fist_start >= SINGLE_FIST_CLEAR_S:
+                clear_all("single fist")
+                single_fist_start = None
+        else:
+            single_fist_start = None
+
+        # --- Brush-size-up gesture -----------------------------------------
+        if size_control:
+            if size_last_step is None:
+                size_last_step = now
+                state["brush"] = min(SIZE_MAX, state["brush"] + 1)
+            elif now - size_last_step >= SIZE_STEP_S:
+                size_last_step = now
+                state["brush"] = min(SIZE_MAX, state["brush"] + 1)
+        else:
+            size_last_step = None
+
+        # --- Stroke lifecycle ----------------------------------------------
+        if pen_mode in ("DRAW", "ERASE") and tip_pt is not None:
             if not active:
                 # Start a fresh stroke with the currently selected tool.
                 active = True
                 current = Stroke(
                     color=state["color"],
                     thickness=state["brush"],
-                    eraser=(mode == "ERASE") or state["eraser"],
+                    eraser=(pen_mode == "ERASE") or state["eraser"],
                 )
                 smooth_pt = np.array(tip_pt, dtype=np.float32)
                 prev_pt = None
@@ -416,16 +532,14 @@ def main():
                 commit_stroke()
                 active = False
 
-        # --- Pending toolbar actions --------------------------------------
+        # --- Pending toolbar actions ---------------------------------------
         if state["pending_undo"]:
             if strokes:
                 strokes.pop()
                 rebuild_canvas(canvas, mask, strokes)
             state["pending_undo"] = False
         if state["pending_clear"]:
-            strokes.clear()
-            canvas[:] = 0
-            mask[:] = 0
+            clear_all("toolbar")
             state["pending_clear"] = False
         if state["pending_save"]:
             save_drawing()
@@ -435,21 +549,37 @@ def main():
         video = frame.copy()
         video[mask == 255] = canvas[mask == 255]
 
-        # Hand skeleton + fingertip marker (in video coordinates).
-        if hand is not None:
-            mp_draw.draw_landmarks(
-                video, hand, mp_hands.HAND_CONNECTIONS,
-                mp_draw.DrawingSpec(color=(120, 255, 120), thickness=1, circle_radius=2),
-                mp_draw.DrawingSpec(color=(255, 255, 255), thickness=1, circle_radius=1),
-            )
-            if tip_pt is not None:
-                cv2.circle(video, tip_pt, 10, (0, 0, 0), 2, cv2.LINE_AA)
-                cv2.circle(video, tip_pt, max(1, state["brush"] // 2),
-                           state["color"] if not state["eraser"] else (200, 200, 200), -1)
+        # Neon hand skeletons (left = cyan, right = magenta).
+        if sides["Left"] is not None:
+            draw_neon_hand(video, sides["Left"], mp_hands, mp_draw, NEON_LEFT)
+            wrist = sides["Left"].landmark[mp_hands.HandLandmark.WRIST]
+            cv2.putText(video, "L", (int(wrist.x * w) - 8, int(wrist.y * h) - 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_LEFT, 2, cv2.LINE_AA)
+        if sides["Right"] is not None:
+            draw_neon_hand(video, sides["Right"], mp_hands, mp_draw, NEON_RIGHT)
+            wrist = sides["Right"].landmark[mp_hands.HandLandmark.WRIST]
+            cv2.putText(video, "R", (int(wrist.x * w) - 8, int(wrist.y * h) - 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, NEON_RIGHT, 2, cv2.LINE_AA)
 
-        # Fist-clear progress bar.
-        if fist_frames > 0:
-            frac = min(1.0, fist_frames / CLEAR_HOLD_FRAMES)
+        # Fingertip markers.
+        if tip_pt is not None:
+            cv2.circle(video, tip_pt, 10, NEON_RIGHT, 2, cv2.LINE_AA)
+            cv2.circle(video, tip_pt, max(1, state["brush"] // 2),
+                       state["color"] if not state["eraser"] else (200, 200, 200), -1)
+            if size_control:
+                cv2.putText(video, "+", (tip_pt[0] + 14, tip_pt[1] - 14),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, NEON_RIGHT, 2, cv2.LINE_AA)
+
+        # Clear progress bars.
+        if both_fist_start is not None:
+            frac = min(1.0, (now - both_fist_start) / BOTH_FIST_CLEAR_S)
+            bar_w = int(280 * frac)
+            cv2.rectangle(video, (20, h - 40), (300, h - 26), (60, 60, 60), -1)
+            cv2.rectangle(video, (20, h - 40), (20 + bar_w, h - 26), (0, 0, 255), -1)
+            cv2.putText(video, "Hold BOTH fists to clear", (20, h - 56),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
+        elif single_fist_start is not None:
+            frac = min(1.0, (now - single_fist_start) / SINGLE_FIST_CLEAR_S)
             bar_w = int(200 * frac)
             cv2.rectangle(video, (20, h - 40), (220, h - 26), (60, 60, 60), -1)
             cv2.rectangle(video, (20, h - 40), (20 + bar_w, h - 26), (0, 0, 255), -1)
@@ -457,18 +587,33 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
 
         # Status text.
-        status = f"Mode: {mode}   |   Tool: {'Eraser' if state['eraser'] else state['color_name']}   |   Brush: {state['brush']}   |   FPS: {fps:.0f}"
+        right_txt = "SIZE+" if size_control else (right["mode"] if right else "--")
+        if left is None:
+            left_txt = "--"
+        elif left_open:
+            left_txt = "OPEN"
+        elif left_fist:
+            left_txt = "FIST"
+        else:
+            left_txt = left["mode"]
+        status = (f"R:{right_txt}  L:{left_txt}   |   "
+                  f"Tool: {'Eraser' if state['eraser'] else state['color_name']}"
+                  f"   |   Brush: {state['brush']}   |   FPS: {fps:.0f}")
         cv2.putText(video, status, (12, 28), cv2.FONT_HERSHEY_SIMPLEX,
                     0.55, (255, 255, 255), 2, cv2.LINE_AA)
 
         # Help overlay.
         if state["show_help"]:
             lines = [
-                "GESTURES:",
-                "  index finger only  -> draw",
-                "  index + middle     -> erase",
-                "  open hand          -> lift pen (move)",
-                "  fist (hold 1.2s)   -> clear canvas",
+                "RIGHT HAND (pen):",
+                "  index only  -> draw",
+                "  index+middle -> erase (left hand closed)",
+                "  open hand   -> lift pen",
+                "",
+                "LEFT HAND (modifier):",
+                "  open palm + right peace -> brush size +",
+                "  BOTH fists (3s)         -> clear canvas",
+                "  ONE fist only (1.2s)    -> clear canvas",
                 "",
                 "KEYS: q quit | u undo | c clear | s save | e eraser | [ ] brush | h help",
             ]
@@ -496,13 +641,12 @@ def main():
         elif key == ord("e"):
             state["eraser"] = not state["eraser"]
         elif key == ord("]"):
-            state["brush"] = min(40, state["brush"] + 1)
+            state["brush"] = min(SIZE_MAX, state["brush"] + 1)
         elif key == ord("["):
             state["brush"] = max(1, state["brush"] - 1)
         elif key == ord("h"):
             state["show_help"] = not state["show_help"]
 
-        now = time.time()
         if now - prev_time > 0:
             fps = 0.9 * fps + 0.1 * (1.0 / (now - prev_time))
         prev_time = now
