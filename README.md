@@ -229,6 +229,15 @@ python sketchcam.py --swap-hands                # if it confuses your left and r
 
 ## 🛠️ Troubleshooting
 
+- **`AttributeError: module 'mediapipe' has no attribute 'solutions'`** — you have
+  **mediapipe 1.x** installed, which removed the `solutions` API this app uses.
+  Fix it with:
+  ```
+  pip uninstall -y mediapipe numpy
+  pip install "mediapipe==0.10.21" "numpy>=1.24,<2"
+  ```
+  Then make sure your `requirements.txt` pins `mediapipe==0.10.21` and
+  `numpy>=1.24.0,<2` (never `mediapipe>=0.10.0`, which lets pip install 1.x).
 - **`ImportError: libGL.so.1: cannot open shared object file`** (Linux/Codespace)
   — OpenCV needs a system OpenGL library. On Ubuntu/Debian run:
   `sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0`
