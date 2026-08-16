@@ -12,9 +12,9 @@ RIGHT HAND = THE PEN:
     * Lift   -> open hand / any other pose               (move without drawing)
 
 LEFT HAND = MODIFIER:
-    * Brush size UP  -> left palm open (✋) + right hand peace sign (✌️)
-    * Clear ALL      -> BOTH hands as fists (✊ + ✊), hold ~3 seconds
-    * (legacy) Clear -> ONE fist only, when it is the only hand, hold ~1.2s
+    * Brush size UP   -> left palm open (✋) + right hand peace sign (✌️)
+    * Brush size DOWN -> left fist (✊) + right hand peace sign (✌️)
+    * Clear ALL       -> BOTH hands as fists (✊ + ✊), hold ~3 seconds
 
 MOUSE (click the toolbar at the top of the window):
     * color swatches, eraser, brush - / +, undo, clear, save
@@ -73,10 +73,10 @@ except ImportError:
 # Configuration
 # --------------------------------------------------------------------------
 PANEL_H = 56                 # height of the toolbar at the top of the window
-SINGLE_FIST_CLEAR_S = 1.2    # one fist (only hand) hold time to clear
 BOTH_FIST_CLEAR_S = 3.0      # both fists hold time to clear
-SIZE_STEP_S = 0.25           # how fast the brush grows while holding the pose
+SIZE_STEP_S = 0.25           # how fast the brush changes while holding the pose
 SIZE_MAX = 40                # brush size cap
+SIZE_MIN = 1                 # brush size floor
 SMOOTH_ALPHA = 0.45          # tip-position smoothing (0 = no smoothing, 1 = frozen)
 MIN_MOVE_PX = 1.5            # ignore tiny movements to avoid jitter
 
@@ -337,7 +337,7 @@ def handle_click(rects, state, x, y):
             elif key == "eraser":
                 state["eraser"] = not state["eraser"]
             elif key == "brush-":
-                state["brush"] = max(1, state["brush"] - 1)
+                state["brush"] = max(SIZE_MIN, state["brush"] - 1)
             elif key == "brush+":
                 state["brush"] = min(SIZE_MAX, state["brush"] + 1)
             elif key == "undo":
@@ -421,9 +421,8 @@ def main():
     active = False            # are we currently laying down a stroke?
 
     # Gesture hold timers (seconds since the pose began, or None).
-    single_fist_start = None
     both_fist_start = None
-    size_last_step = None     # last time the brush grew during size control
+    size_last_step = None     # last time the brush changed during size control
 
     rects = build_ui_rects(w)
 
@@ -493,10 +492,11 @@ def main():
         left_open = bool(left and left["open"])
 
         both_fist = right_fist and left_fist                      # ✊ + ✊
-        single_fist = (right_fist and not left) or (left_fist and not right)
 
-        # Brush size up: left palm open + right hand peace sign.
-        size_control = bool(left_open and right and right["peace"])
+        # Brush size: left hand open/fist + right hand peace sign.
+        size_up = bool(left_open and right and right["peace"])    # ✋ + ✌️
+        size_down = bool(left_fist and right and right["peace"])  # ✊ + ✌️
+        size_control = size_up or size_down
 
         if size_control:
             pen_mode = "LIFT"          # ✌️ does not erase while resizing
@@ -505,7 +505,7 @@ def main():
 
         tip_pt = right["tip"] if right else None
 
-        # --- Clear gestures (time-based holds) -----------------------------
+        # --- Clear gesture (BOTH fists, time-based hold) -------------------
         if both_fist:
             if both_fist_start is None:
                 both_fist_start = now
@@ -515,23 +515,15 @@ def main():
         else:
             both_fist_start = None
 
-        if single_fist:
-            if single_fist_start is None:
-                single_fist_start = now
-            elif now - single_fist_start >= SINGLE_FIST_CLEAR_S:
-                clear_all("single fist")
-                single_fist_start = None
-        else:
-            single_fist_start = None
-
-        # --- Brush-size-up gesture -----------------------------------------
+        # --- Brush-size gestures (up / down) -------------------------------
         if size_control:
+            delta = 1 if size_up else -1
             if size_last_step is None:
                 size_last_step = now
-                state["brush"] = min(SIZE_MAX, state["brush"] + 1)
+                state["brush"] = max(SIZE_MIN, min(SIZE_MAX, state["brush"] + delta))
             elif now - size_last_step >= SIZE_STEP_S:
                 size_last_step = now
-                state["brush"] = min(SIZE_MAX, state["brush"] + 1)
+                state["brush"] = max(SIZE_MIN, min(SIZE_MAX, state["brush"] + delta))
         else:
             size_last_step = None
 
@@ -601,10 +593,11 @@ def main():
             cv2.circle(video, tip_pt, max(1, state["brush"] // 2),
                        state["color"] if not state["eraser"] else (200, 200, 200), -1)
             if size_control:
-                cv2.putText(video, "+", (tip_pt[0] + 14, tip_pt[1] - 14),
+                sign = "+" if size_up else "-"
+                cv2.putText(video, sign, (tip_pt[0] + 14, tip_pt[1] - 14),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, NEON_RIGHT, 2, cv2.LINE_AA)
 
-        # Clear progress bars.
+        # Clear progress bar (both fists).
         if both_fist_start is not None:
             frac = min(1.0, (now - both_fist_start) / BOTH_FIST_CLEAR_S)
             bar_w = int(280 * frac)
@@ -612,16 +605,14 @@ def main():
             cv2.rectangle(video, (20, h - 40), (20 + bar_w, h - 26), (0, 0, 255), -1)
             cv2.putText(video, "Hold BOTH fists to clear", (20, h - 56),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
-        elif single_fist_start is not None:
-            frac = min(1.0, (now - single_fist_start) / SINGLE_FIST_CLEAR_S)
-            bar_w = int(200 * frac)
-            cv2.rectangle(video, (20, h - 40), (220, h - 26), (60, 60, 60), -1)
-            cv2.rectangle(video, (20, h - 40), (20 + bar_w, h - 26), (0, 0, 255), -1)
-            cv2.putText(video, "Hold fist to clear", (20, h - 56),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
 
         # Status text.
-        right_txt = "SIZE+" if size_control else (right["mode"] if right else "--")
+        if size_up:
+            right_txt = "SIZE+"
+        elif size_down:
+            right_txt = "SIZE-"
+        else:
+            right_txt = right["mode"] if right else "--"
         if left is None:
             left_txt = "--"
         elif left_open:
@@ -646,8 +637,8 @@ def main():
                 "",
                 "LEFT HAND (modifier):",
                 "  open palm + right peace -> brush size +",
+                "  left fist + right peace -> brush size -",
                 "  BOTH fists (3s)         -> clear canvas",
-                "  ONE fist only (1.2s)    -> clear canvas",
                 "",
                 "KEYS: q quit | u undo | c clear | s save | e eraser | [ ] brush | h help",
             ]
@@ -677,7 +668,7 @@ def main():
         elif key == ord("]"):
             state["brush"] = min(SIZE_MAX, state["brush"] + 1)
         elif key == ord("["):
-            state["brush"] = max(1, state["brush"] - 1)
+            state["brush"] = max(SIZE_MIN, state["brush"] - 1)
         elif key == ord("h"):
             state["show_help"] = not state["show_help"]
 

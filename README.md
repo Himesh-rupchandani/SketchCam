@@ -126,19 +126,20 @@ Stand so both hands are visible to the camera.
 | Gesture                 | Action                          |
 | ----------------------- | ------------------------------- |
 | ☝️ Index finger only     | **Draw**                        |
-| ✌️ Index + middle finger | **Erase** (left hand closed)    |
+| ✌️ Index + middle finger | **Erase** (left hand neutral)    |
 | ✋ Open hand             | Lift the pen (move, don't draw) |
 
 ### Left hand = the modifier
 
-| Gesture                                            | Action                        |
-| -------------------------------------------------- | ----------------------------- |
-| ✋ Left palm open **+** right hand ✌️ (peace)        | **Increase brush size** (hold) |
-| ✊ **Both** fists, hold ~3 seconds                   | **Clear** the whole canvas    |
-| ✊ One fist only (when it's the only hand), ~1.2 s  | **Clear** the whole canvas    |
+| Gesture                                        | Action                        |
+| ---------------------------------------------- | ----------------------------- |
+| ✋ Left palm open **+** right hand ✌️ (peace)    | **Increase brush size** (hold) |
+| ✊ Left fist **+** right hand ✌️ (peace)         | **Decrease brush size** (hold) |
+| ✊ **Both** fists, hold ~3 seconds               | **Clear** the whole canvas    |
 
-> While your left palm is open, the right hand's ☝️ still draws normally — only
-> ✌️ is repurposed into "grow the brush".
+> While your left hand is open (or closed in a fist), the right hand's ☝️ still
+> draws normally — only ✌️ is repurposed into resizing the brush:
+> left open ✋ + ✌️ grows it, left fist ✊ + ✌️ shrinks it.
 
 ---
 
