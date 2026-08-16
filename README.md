@@ -16,6 +16,42 @@
 
 ---
 
+## ⬇️ Clone & Run (VS Code)
+
+**Fastest way to get it running — copy-paste into the VS Code terminal.**
+
+1. Open VS Code, then open the terminal with `` Ctrl+` `` (backtick key).
+2. Paste the block for your system and press Enter:
+
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/Himesh-rupchandani/SketchCam.git
+cd SketchCam
+pip install -r requirements.txt
+python sketchcam.py
+```
+
+### macOS / Linux
+
+```bash
+git clone https://github.com/Himesh-rupchandani/SketchCam.git
+cd SketchCam
+pip install -r requirements.txt
+python3 sketchcam.py
+```
+
+That's it — the webcam window opens and you can start writing in the air.
+
+> **New to git?** Install it from [git-scm.com](https://git-scm.com/), or on
+> Windows download **Git for Windows**. VS Code's terminal can then run `git`
+> automatically.
+>
+> **`python` not recognized?** Try `py sketchcam.py` instead, or reinstall
+> Python from [python.org](https://python.org) and tick **"Add Python to PATH"**.
+
+---
+
 ## 🚀 What is SketchCam?
 
 SketchCam turns your **built-in webcam** into an air-writing canvas. It uses
