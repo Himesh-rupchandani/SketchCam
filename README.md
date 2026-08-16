@@ -21,9 +21,27 @@ live camera feed.
 
 You need **Python 3.8–3.12**. Then:
 
-```bash
+### Windows
+
+Open **PowerShell** or **Command Prompt** in the project folder and run:
+
+```powershell
 pip install -r requirements.txt
 python sketchcam.py
+```
+
+Or just **double-click `run.bat`** — it installs everything and starts the app
+for you.
+
+> Don't type the `#!/usr/bin/env python3` line from the top of the file —
+> that's a Linux/macOS hint, not a Windows command. On Windows just use
+> `python sketchcam.py` (or `py sketchcam.py`).
+
+### macOS / Linux
+
+```bash
+pip install -r requirements.txt
+python3 sketchcam.py
 ```
 
 > The first launch downloads nothing extra — the pinned MediaPipe version ships
