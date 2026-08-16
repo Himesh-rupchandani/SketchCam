@@ -28,6 +28,7 @@ KEYBOARD:
 
 import argparse
 import os
+import sys
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -36,7 +37,28 @@ from dataclasses import dataclass, field
 # though it is still the most widely used, self-contained API. Silence them.
 warnings.filterwarnings("ignore")
 
-import cv2
+try:
+    import cv2
+except ImportError as exc:
+    msg = str(exc)
+    if "libGL.so.1" in msg:
+        raise SystemExit(
+            "OpenCV needs a system OpenGL library that is not installed.\n"
+            "\n"
+            "On Ubuntu/Debian (including GitHub Codespaces) run:\n"
+            "    sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0\n"
+            "\n"
+            "On Fedora/CentOS run:\n"
+            "    sudo dnf install -y mesa-libGL glib2\n"
+            "\n"
+            "On macOS/Windows this should not happen — just make sure the\n"
+            "dependencies are installed with:  pip install -r requirements.txt"
+        )
+    raise SystemExit(
+        "OpenCV is not installed.\n"
+        "Install it with:  pip install -r requirements.txt"
+    )
+
 import numpy as np
 
 try:
@@ -343,6 +365,16 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # A display is required to show the drawing window. Give a clear message
+    # on headless Linux (e.g. a GitHub Codespace or a bare SSH session).
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY") \
+            and not os.environ.get("WAYLAND_DISPLAY"):
+        raise SystemExit(
+            "No display detected — SketchCam needs a screen to show its window.\n"
+            "You appear to be in a headless environment (a Codespace or SSH shell).\n"
+            "Run SketchCam on your laptop/desktop, where a screen and webcam exist."
+        )
+
     mp_hands = mp.solutions.hands
     mp_draw = mp.solutions.drawing_utils
     hands = mp_hands.Hands(
@@ -359,8 +391,10 @@ def main():
     ok, frame = cap.read()
     if not ok:
         raise SystemExit(
-            f"Could not open camera #{args.camera}. "
-            f"Try a different --camera value (0, 1, ...)."
+            f"Could not open camera #{args.camera}.\n"
+            f"Try a different --camera value (0, 1, ...), and make sure the\n"
+            f"webcam is not in use by another app. Remote/headless environments\n"
+            f"(Codespaces, cloud VMs) usually have no webcam at all."
         )
     h, w = frame.shape[:2]
     print(f"SketchCam: camera {args.camera} @ {w}x{h}. Press 'q' to quit, 'h' for help.")

@@ -93,6 +93,14 @@ python sketchcam.py --swap-hands      # if it confuses your left and right hands
 
 ## Troubleshooting
 
+- **`ImportError: libGL.so.1: cannot open shared object file`** (Linux/Codespace) —
+  OpenCV needs a system OpenGL library. On Ubuntu/Debian run:
+  `sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0`
 - **"Could not open camera"** — try another index: `python sketchcam.py --camera 1`
 - **Hand not detected** — brighten the room, keep fingers spread, slow down.
 - **Erase feels too big/small** — the eraser is 3× your brush size; adjust the brush.
+
+> ⚠️ **Codespaces / headless servers:** SketchCam needs a **webcam and a
+> screen**, which a Codespace doesn't have. For the real experience, run it on
+> your laptop or desktop (Windows / macOS / Linux) with:
+> `pip install -r requirements.txt` then `python sketchcam.py`.
