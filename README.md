@@ -109,6 +109,32 @@ python sketchcam.py --swap-hands      # if it confuses your left and right hands
 > (e.g. 640px) the rightmost buttons may be cropped — keep the default
 > resolution, or use the keyboard shortcuts instead.
 
+## Running in VS Code
+
+1. **Open the folder** — in VS Code: `File → Open Folder…` and pick the
+   `SketchCam` folder.
+2. **Install the Python extension** — open the Extensions panel
+   (`Ctrl+Shift+X`), search **Python** (by Microsoft) and install it.
+3. **Create a virtual environment** (optional but recommended) — in the VS Code
+   terminal (`Ctrl+`` `):
+   ```powershell
+   python -m venv .venv
+   ```
+   Then select it as the interpreter: `Ctrl+Shift+P` → **Python: Select
+   Interpreter** → choose `.venv`.
+4. **Install dependencies** — in the terminal:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+5. **Run it**:
+   - Press **F5** (uses the included `.vscode/launch.json`), or
+   - Click the ▶ **Run** button in the top-right corner of `sketchcam.py`, or
+   - In the terminal: `python sketchcam.py`
+
+> The drawing window is a separate OpenCV window, not part of VS Code — move
+> the terminal aside and keep the camera window focused to use the keyboard
+> shortcuts (`q` to quit).
+
 ## Troubleshooting
 
 - **`ImportError: libGL.so.1: cannot open shared object file`** (Linux/Codespace) —
